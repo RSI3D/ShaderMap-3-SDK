@@ -1,4 +1,5 @@
 SHADERMAP 3 SDK
+http://shadermap.com/sdk
 
 -----------
 
@@ -28,7 +29,10 @@ building basic materials. See the "Syntax" file in that folder for more details.
 
 -----------
 
-SUPPORT
+DOWNLOAD / SUPPORT
+
+ShaderMap software is available at:
+http://shadermap.com/downloads
 
 For questions and suggestions visit the ShaderMap forums at:
 http://shadermap.com/forums
