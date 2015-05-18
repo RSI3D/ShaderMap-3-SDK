@@ -24,7 +24,7 @@ example source code in the folder "maps/examples".
 
 * Materials XML/HLSL API - The "materials" folder contains a description of the 
 XML + HLSL syntax used to build ShaderMap materials as well as examples for 
-building basic materials. See the readme file in that folder for more details.
+building basic materials. See the "Syntax" file in that folder for more details.
 
 -----------
 
