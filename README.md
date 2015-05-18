@@ -40,4 +40,4 @@ LICENSE
 The ShaderMap SDK v3 is released under The MIT License (MIT)
 http://opensource.org/licenses/MIT
 
-See "license.txt" for more information.
+See "LICENSE" for more information.
