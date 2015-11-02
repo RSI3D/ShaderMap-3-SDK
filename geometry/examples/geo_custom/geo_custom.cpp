@@ -191,8 +191,9 @@ BOOL on_process(unsigned int plugin_index, const wchar_t* file_path)
 
 	// Local data
 	FILE*							fp;
-	unsigned int					i, ui_0, vertex_count, index_count, uv_count, face_count, geometry_type;
+	unsigned int					i, ui_0, ui_1, vertex_count, index_count, uv_count, face_count, geometry_type;
 	unsigned int*					index_array;
+	BOOL							is_success;
 	vector_2_s*						uv_array;
 	vertex_s*						vertex_array;
 	
@@ -202,8 +203,9 @@ BOOL on_process(unsigned int plugin_index, const wchar_t* file_path)
 	std::vector<gp_render_face_s>	render_face_list;
 	
 	std::vector<gp_node_vertex_s>	node_vertex_list;
-	std::vector<gp_node_uv_s>		node_uv_list;
 	std::vector<gp_node_face_s>		node_face_list;	
+
+	gp_node_uv_data_s				node_uv_data;
 	
 	
 	// Get geometry type. This can be of type render or of type node. 
@@ -223,11 +225,20 @@ BOOL on_process(unsigned int plugin_index, const wchar_t* file_path)
 		unsigned int * index_count		// An array of undinged int indices - 7 unsigned int per 1 vertex (3 for vertices, 3 for uv, and 1 for start index).
 	*/
 
+	// Set return value
+	is_success		= TRUE;
+
+	// Null arrays
+	vertex_array	= 0;
+	index_array		= 0;
+	uv_array		= 0;
+
 	// Open binary file for read.
 	_wfopen_s(&fp, file_path, _T("rb"));
 	if(!fp)
 	{	LOG_ERROR_MSG(plugin_index, _T("Failed to open file at file_path."));
-		return FALSE;
+		is_success = FALSE;
+		goto ON_PROCESS_CLEANUP;
 	}
 
 	// Read vertex count.
@@ -241,30 +252,31 @@ BOOL on_process(unsigned int plugin_index, const wchar_t* file_path)
 	if(vertex_count == 0 || uv_count == 0 || index_count == 0)
 	{	LOG_ERROR_MSG(plugin_index, _T("One of the geometry counts was zero."));
 		fclose(fp);
-		return FALSE;
+		is_success = FALSE;
+		goto ON_PROCESS_CLEANUP;
 	}
 
 	// Allocate local arrays to store the geometry data.
 	vertex_array = new (std::nothrow) vertex_s[vertex_count];
 	if(!vertex_array)
-	{	LOG_ERROR_MSG(plugin_index, _T("Memory Allocation Error: Faile to allocate vertex_array."));
+	{	LOG_ERROR_MSG(plugin_index, _T("Memory Allocation Error: Failed to allocate vertex_array."));
 		fclose(fp);
-		return FALSE;
+		is_success = FALSE;
+		goto ON_PROCESS_CLEANUP;
 	}
 	uv_array = new (std::nothrow) vector_2_s[uv_count];
 	if(!uv_array)
-	{	LOG_ERROR_MSG(plugin_index, _T("Memory Allocation Error: Faile to allocate uv_array."));
-		delete [] vertex_array;
+	{	LOG_ERROR_MSG(plugin_index, _T("Memory Allocation Error: Failed to allocate uv_array."));		
 		fclose(fp);
-		return FALSE;
+		is_success = FALSE;
+		goto ON_PROCESS_CLEANUP;
 	}
 	index_array = new (std::nothrow) unsigned int[index_count];
 	if(!index_array)
-	{	LOG_ERROR_MSG(plugin_index, _T("Memory Allocation Error: Faile to allocate index_array."));
-		delete [] vertex_array;
-		delete [] uv_array;
+	{	LOG_ERROR_MSG(plugin_index, _T("Memory Allocation Error: Failed to allocate index_array."));		
 		fclose(fp);
-		return FALSE;
+		is_success = FALSE;
+		goto ON_PROCESS_CLEANUP;
 	}
 
 	// Read in the arrays
@@ -334,25 +346,67 @@ BOOL on_process(unsigned int plugin_index, const wchar_t* file_path)
 
 			render_face_list.push_back(render_face);
 		}
-		
-		// Cleanup
-		delete [] vertex_array;
-		vertex_array	= 0;
-		delete [] uv_array;
-		uv_array		= 0;
-		delete [] index_array;
-		index_array		= 0;
 
-		// Send the render lists to ShaderMap.
-		if(!gp_create_render_geometry(render_vertex_list.data(), (unsigned int)render_vertex_list.size(), render_face_list.data(), (unsigned int)render_face_list.size(), 1, FALSE))
+		// Send the render lists to ShaderMap. No additional UV arrays.
+		if(!gp_create_render_geometry(render_vertex_list.data(), (unsigned int)render_vertex_list.size(), render_face_list.data(), (unsigned int)render_face_list.size(), 1, FALSE, 0, 0))
 		{	LOG_ERROR_MSG(plugin_index, _T("Failed to create render geometry with gp_create_render_geometry."));
-			return FALSE;
+			is_success = FALSE;
+			goto ON_PROCESS_CLEANUP;
 		}
 	}
 	// GP_GEOMETRY_TYPE_NODE
 	// This format for geometry is used for 3d model nodes in the project grid.
 	else if(geometry_type == GP_GEOMETRY_TYPE_NODE)
 	{
+
+		// Create the node uv data struct
+
+		// Allocate an array of gp_node_uv_s arrays - 1 for each uv channel. In this case we have only 1 uv channel.
+		node_uv_data.uv_channels_array = new (std::nothrow) gp_node_uv_s*[1];
+		if(!node_uv_data.uv_channels_array)
+		{	LOG_ERROR_MSG(plugin_index, _T("Memory Allocation Error: Faile to allocate node_uv_data.uv_channels_array."));
+			is_success = FALSE;
+			goto ON_PROCESS_CLEANUP;
+		}
+
+		// Allocate an single array of gp_node_uv_s for the 1 uv channel.
+		node_uv_data.uv_channels_array[0] = new (std::nothrow) gp_node_uv_s[uv_count];
+		if(!node_uv_data.uv_channels_array[0])
+		{	LOG_ERROR_MSG(plugin_index, _T("Memory Allocation Error: Faile to allocate node_uv_data.uv_channels_array[0]."));
+			is_success = FALSE;
+			goto ON_PROCESS_CLEANUP;
+		}
+
+		// Copy in the uv array
+		memcpy(node_uv_data.uv_channels_array[0], uv_array, uv_count * sizeof(gp_node_uv_s));
+
+		// Allocate an array of unsigned int arrays - 1 for each uv channel. In this case we have only 1 uv channel.
+		node_uv_data.uv_indices_array = new (std::nothrow) unsigned int*[1];
+		if(!node_uv_data.uv_indices_array)
+		{	LOG_ERROR_MSG(plugin_index, _T("Memory Allocation Error: Faile to allocate node_uv_data.uv_indices_array."));
+			is_success = FALSE;
+			goto ON_PROCESS_CLEANUP;
+		}
+
+		// Allocate an single array of gp_node_uv_s for the 1 uv channel.
+		node_uv_data.uv_indices_array[0] = new (std::nothrow) unsigned int[face_count * 3];
+		if(!node_uv_data.uv_indices_array[0])
+		{	LOG_ERROR_MSG(plugin_index, _T("Memory Allocation Error: Faile to allocate node_uv_data.uv_indices_array[0]."));
+			is_success = FALSE;
+			goto ON_PROCESS_CLEANUP;
+		}
+
+		// Allocate an array of unsigned int - 1 for each uv channel. In this case we have only 1 uv channel.
+		node_uv_data.uv_count_array = new (std::nothrow) unsigned int[1];
+		if(!node_uv_data.uv_count_array)
+		{	LOG_ERROR_MSG(plugin_index, _T("Memory Allocation Error: Faile to allocate node_uv_data.uv_count_array."));
+			is_success = FALSE;
+			goto ON_PROCESS_CLEANUP;
+		}
+
+		node_uv_data.uv_count_array[0]	= uv_count;
+		node_uv_data.uv_channel_count	= 1;		
+
 		// Build the node geometry lists
 		node_vertex_list.resize(vertex_count);		
 		for(i=0; i<vertex_count; i++)
@@ -364,46 +418,46 @@ BOOL on_process(unsigned int plugin_index, const wchar_t* file_path)
 			node_vertex_list[i].nz		= vertex_array[i].normal.z;
 		}
 
-		node_uv_list.resize(uv_count);
-		for(i=0; i<uv_count; i++)
-		{	node_uv_list[i].u			= uv_array[i].x;
-			node_uv_list[i].v			= uv_array[i].y;
-		}
-
 		node_face_list.resize(face_count);
-		ui_0 = 0;
+		ui_0	= 0;
+		ui_1	= 0;
 		for(i=0; i<index_count; i+=7)
-		{	node_face_list[ui_0].a		= index_array[i];
+		{	
+			// Copy in the face list.
+			node_face_list[ui_0].a		= index_array[i];
 			node_face_list[ui_0].b		= index_array[i+1];
-			node_face_list[ui_0].c		= index_array[i+2];
-			node_face_list[ui_0].uv_a	= index_array[i+3];
-			node_face_list[ui_0].uv_b	= index_array[i+4];
-			node_face_list[ui_0].uv_c	= index_array[i+5];
+			node_face_list[ui_0].c		= index_array[i+2];			
 			node_face_list[ui_0].subset_index = 0;			// The CUSTOM format does not have subsets so all are subset zero.
 			ui_0++;
+
+			// Copy in the uv indices
+			node_uv_data.uv_indices_array[0][ui_1]	= index_array[i+3]; ui_1++;
+			node_uv_data.uv_indices_array[0][ui_1]	= index_array[i+4]; ui_1++;
+			node_uv_data.uv_indices_array[0][ui_1]	= index_array[i+5]; ui_1++;
 		}
-
-		// Cleanup loaded geometry arrays.
-		delete [] vertex_array;
-		vertex_array	= 0;
-		delete [] uv_array;
-		uv_array		= 0;
-		delete [] index_array;
-		index_array		= 0;
-
+		
 		// Send the node lists to ShaderMap.
-		if(!gp_create_node_geometry(node_vertex_list.data(), vertex_count, node_uv_list.data(), uv_count, node_face_list.data(), face_count, 1, FALSE))
+		if(!gp_create_node_geometry(node_vertex_list.data(), vertex_count, node_face_list.data(), face_count, &node_uv_data, 1, FALSE))
 		{	LOG_ERROR_MSG(plugin_index, _T("Failed to create node geometry with gp_create_node_geometry."));
 			return FALSE;
 		}
 	}	
+
+ON_PROCESS_CLEANUP:
+
+	// Cleanup loaded geometry arrays.
+	delete [] vertex_array;
+	vertex_array	= 0;
+	delete [] uv_array;
+	uv_array		= 0;
+	delete [] index_array;
+	index_array		= 0;
 	
 	// Clear lists.
 	node_vertex_list.clear();
-	node_uv_list.clear();
 	node_face_list.clear();
 		
-	return TRUE;
+	return is_success;
 }
 
 // Free any local plugin resources allocated - called by ShaderMap before detaching from the plugin.
