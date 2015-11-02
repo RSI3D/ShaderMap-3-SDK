@@ -439,7 +439,8 @@ BOOL on_process(unsigned int plugin_index, const wchar_t* file_path)
 		// Send the node lists to ShaderMap.
 		if(!gp_create_node_geometry(node_vertex_list.data(), vertex_count, node_face_list.data(), face_count, &node_uv_data, 1, FALSE))
 		{	LOG_ERROR_MSG(plugin_index, _T("Failed to create node geometry with gp_create_node_geometry."));
-			return FALSE;
+			is_success = FALSE;
+			goto ON_PROCESS_CLEANUP;
 		}
 	}	
 
